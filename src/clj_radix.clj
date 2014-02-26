@@ -200,6 +200,7 @@
           idx (matching-prefix-array 0 prefix (.prefix n))
           cnt (Array/getLength prefix)
           cnt' (Array/getLength (.prefix n))]
+
       (cond (and (p/== idx cnt) (p/== idx cnt'))
 
         (let [value' (if (identical? value none)
@@ -217,18 +218,18 @@
                           (keys* (.children n)))]
           (node prefix value' epoch' children'))
 
-        (p/== 0 cnt)
-        (node nil value epoch'
-          (let [n' (node (drop-array 1 (.prefix n)) (.value n) epoch' (.children n))
-                x (aget ^objects (.prefix n) 0)]
+        (p/== idx cnt)
+        (node prefix value epoch'
+          (let [n' (node (drop-array (p/inc idx) (.prefix n)) (.value n) epoch' (.children n))
+                x (aget ^objects (.prefix n) idx)]
             (if-let [^RadixNode child (lookup children x nil)]
               (put children x (.merge child n' f))
               (put children x n'))))
 
-        (p/== 0 cnt')
-        (node nil (.value n) epoch'
-          (let [^RadixNode this' (node (drop-array 1 prefix) value epoch' children)
-                x (aget prefix 0)]
+        (p/== idx cnt')
+        (node (.prefix n) (.value n) epoch'
+          (let [^RadixNode this' (node (drop-array (p/inc idx) prefix) value epoch' children)
+                x (aget prefix idx)]
             (if-let [child (lookup (.children n) x nil)]
               (put (.children n) x (.merge this' child f))
               (put (.children n) x this'))))
