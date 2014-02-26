@@ -1,192 +1,26 @@
 (ns clj-radix
   (:refer-clojure
-    :exclude [remove])
+    :exclude [remove merge merge-with])
   (:require
-    [primitive-math :as p])
+    [primitive-math :as p]
+    [clj-radix.utils :refer :all]
+    [clj-radix.map :refer :all])
   (:import
     [java.lang.reflect
      Array]
-    [java.util
-     HashMap]))
-
-;;;
-
-(def ^:private ^:const obj-ary (class (object-array [])))
-
-(defn- ^long len ^long [^objects ary]
-  (if (nil? ary)
-    0
-    (Array/getLength ary)))
-
-(defn ^Character char-at [^CharSequence cs ^long idx]
-  (Character. (.charAt cs idx)))
-
-(defmacro ^:private drop*
-  [[n s] cnt-s nth-s]
-  (let [ary-sym (gensym "ary")]
-    `(let [cnt# ~cnt-s]
-       (if (p/>= ~n cnt#)
-         (Array/newInstance Object 0)
-         (let [~ary-sym (Array/newInstance Object (p/int (p/- cnt# ~n)))]
-           (dotimes [i# (p/- cnt# ~n)]
-             (aset ~(with-meta ary-sym {:tag 'objects}) i# (~nth-s ~s (p/+ i# ~n))))
-           ~ary-sym)))))
-
-(defn- drop-array
-  [^long n ^objects s]
-  (if (p/== 0 n)
-    s
-    (drop* [n s]
-      (p/long (Array/getLength s))
-      aget)))
-
-(defn- drop-indexed
-  [^long n ^clojure.lang.Indexed s]
-  (drop* [n s]
-    (p/long (.count ^clojure.lang.Indexed s))
-    .nth))
-
-(defn- take-array
-  [^long n ^objects s]
-  (let [cnt (p/long (Array/getLength s))]
-    (if (p/== 0 n)
-      (Array/newInstance Object 0)
-      (let [cnt' (Math/min cnt n)
-            ^objects ary (Array/newInstance Object cnt')]
-        (dotimes [i cnt']
-          (aset ary i (aget s i)))
-        ary))))
-
-(defn- drop*
-  [^long n s]
-  (if (p/>= n (count s))
-    nil
-    (if (instance? obj-ary s)
-      (let [cnt (len s)
-            ^objects ary (object-array (p/- cnt n))]
-        (dotimes [i (p/- cnt n)]
-          (aset ary i (aget ^objects s (p/+ i n))))
-        ary)
-      (let [cnt (count s)
-            ^objects ary (object-array (p/- cnt n))]
-        (dotimes [i (p/- cnt n)]
-          (aset ary i (nth s (p/+ i n))))
-        ary))))
-
-(defn- take*
-  [^long n s]
-  (if (p/== 0 n)
-    nil
-    (let [^objects ary (object-array n)]
-      (if (instance? obj-ary s)
-        (dotimes [i n]
-          (aset ary i (aget ^objects s i)))
-        (dotimes [i n]
-          (aset ary i (nth s i))))
-      ary)))
-
-;;;
-
-(defmacro ^:private matching-prefix* [[offset ks prefix] ks-size ks-lookup]
-  `(if (or (nil? ~ks) (nil? ~prefix))
-     ~offset
-     (let [cnt-ks# (p/- ~ks-size ~offset)
-           cnt-prefix# (p/long (Array/getLength ~prefix))
-           cnt# (Math/min cnt-ks# cnt-prefix#)]
-       (loop [idx# 0]
-         (if (p/== cnt# idx#)
-           (p/+ ~offset idx#)
-           (if (= (~ks-lookup ~ks (p/+ ~offset idx#)) (aget ~prefix idx#))
-             (recur (p/inc idx#))
-             (p/+ ~offset idx#)))))))
-
-(defn- ^long matching-prefix
-  ^long [^long offset ks ^objects prefix]
-  (matching-prefix* [offset ks prefix]
-    (p/long (count ks))
-    nth))
-
-(defn- ^long matching-prefix-array
-  ^long [^long offset ^objects ks ^objects prefix]
-  (matching-prefix* [offset ks prefix]
-    (Array/getLength ks)
-    aget))
-
-(defn- ^long matching-prefix-indexed
-  ^long [^long offset ^clojure.lang.Indexed ks ^objects prefix]
-  (matching-prefix* [offset ks prefix]
-    (p/long (.count ^clojure.lang.Indexed ks))
-    .nth))
-
-(defn- ^long matching-prefix-string
-  ^long [^long offset ^CharSequence ks ^objects prefix]
-  (matching-prefix* [offset ks prefix]
-    (p/long (.length ^CharSequence ks))
-    char-at))
-
-
-
-;;;
-
-(definterface IRadixMap
-  (keys [])
-  (put [k v])
-  (putBang [k v])
-  (remove [k])
-  (removeBang [k])
-  (lookup [k default]))
-
-(deftype RadixMap [^HashMap m]
-  IRadixMap
-  (keys [_] (.keySet m))
-  (put [_ k v] (RadixMap. (doto (HashMap. m) (.put k v))))
-  (putBang [this k v] (.put m k v) this)
-  (remove [_ k] (RadixMap. (doto (HashMap. m) (.remove k))))
-  (removeBang [this k] (.remove m k) this)
-  (lookup [_ k default] (if (.containsKey m k) (.get m k) default)))
-
-(defn radix-map
-  ([]
-     (RadixMap. (HashMap.)))
-  ([a b]
-     (RadixMap. (doto (HashMap.) (.put a b))))
-  ([a b c d]
-     (RadixMap. (doto (HashMap.) (.put a b) (.put c d)))))
-
-(defmethod print-method RadixMap [^RadixMap m w]
-  (print-method (into {} (.m m)) w))
-
-(defn- put [^IRadixMap m k v]
-  (if (nil? m)
-    (radix-map k v)
-    (.put m k v)))
-
-(defn- put! [^IRadixMap m k v]
-  (if (nil? m)
-    (radix-map k v)
-    (.putBang m k v)))
-
-(defn- remove [^IRadixMap m k]
-  (if (nil? m)
-    nil
-    (.remove m k)))
-
-(defn- remove! [^IRadixMap m k]
-  (if (nil? m)
-    nil
-    (.removeBang m k)))
-
-(defn- lookup [^IRadixMap m k default]
-  (if (nil? m)
-    default
-    (.lookup m k default)))
+    [clj_radix.map
+     IRadixMap]))
 
 ;;;
 
 (def ^:private ^:const none ::none)
 
+(def ^:private ^:const obj-ary (class (object-array [])))
+
 (definterface IRadixNode
-  (epoch ^long [])
+  (merge [node f])
+  (descend [^clojure.lang.Indexed ks ^long offset])
+  (toNestedMap [])
   (entries [prefix])
   (assoc [ks ^long offset ^long epoch v])
   (dissoc [ks ^long offset ^long epoch])
@@ -200,7 +34,7 @@
 (defmacro ^:private get*
   [[ks offset default] get-method matching-prefix ks-size ks-nth]
   `(let [idx# (~matching-prefix ~offset ~ks ~'prefix)]
-      (if (p/== (p/- idx# ~offset) (len ~'prefix))
+      (if (p/== (p/- idx# ~offset) (Array/getLength ~'prefix))
         (if (p/== idx# ~ks-size)
           (if (identical? ~'value none)
             ~default
@@ -257,7 +91,7 @@
               (node ~'prefix ~v ~epoch ~'children))
 
             ;; place the current node below the new one
-            (node (drop* ~offset ~ks) ~v ~epoch
+            (node (~drop-method ~offset ~ks) ~v ~epoch
               (let [idx'# (p/- idx# ~offset)]
                 (radix-map
                   (aget ~'prefix idx'#)
@@ -297,38 +131,59 @@
 (defmacro ^:private dissoc*
   [[this ks offset epoch default] dissoc-method matching-prefix ks-size ks-nth]
   `(let [idx# (~matching-prefix ~offset ~ks ~'prefix)
-         cnt# ~ks-size]
+         cnt# ~ks-size
+         transient?# (p/== ~epoch ~'epoch)]
      (if (p/== (p/- idx# ~offset) (Array/getLength ~'prefix))
        (if (p/== idx# cnt#)
          (if (nil? ~'children)
            nil
-           (node ~'prefix none ~epoch ~'children))
+           (if transient?#
+             (do
+               (set! ~'value none)
+               ~this)
+             (node ~'prefix none ~epoch ~'children)))
 
-         (let [x# (~ks-nth ~ks idx#)]
-           (if-let [^IRadixNode child# (lookup ~'children x# nil)]
-             (node ~'prefix ~'value ~epoch
-               (if-let [child'# (~dissoc-method child# ~ks (p/inc idx#) ~epoch)]
-                 (put ~'children x# child'#)
-                 (remove ~'children x#)))
-             ~this)))
+         (let [x# (~ks-nth ~ks idx#)
+               ^IRadixNode child# (lookup ~'children x# nil)]
+           (if (nil? child#)
+             ~this
+             (let [child'# (~dissoc-method child# ~ks (p/inc idx#) ~epoch)]
+               (if (identical? child# child'#)
+                 (do
+                   (put! ~'children x# child'#)
+                   ~this)
+                 (if (nil? child'#)
+                   (if transient?#
+                     (if (nil? (remove! ~'children x#))
+                       nil
+                       ~this)
+                     (node ~'prefix ~'value ~epoch (remove ~'children x#)))
+                   (node ~'prefix ~'value ~epoch
+                     (put ~'children x# child'#))))))))
        ~this)))
 
 (defmacro ^:private update*
   [[this ks offset epoch f] assoc-method update-method matching-prefix ks-size ks-nth]
   `(let [idx# (~matching-prefix ~offset ~ks ~'prefix)
-         cnt# ~ks-size]
+         cnt# ~ks-size
+         transient?# (p/== ~epoch ~'epoch)]
      (if (p/== (p/- idx# ~offset) (Array/getLength ~'prefix))
        (if (p/== idx# cnt#)
-         (node ~'prefix
-           (~f (if (identical? none ~'value) nil ~'value))
-           ~epoch
-           ~'children)
+         (let [value'# (~f (if (identical? none ~'value) nil ~'value))]
+           (if transient?#
+             (set! ~'value value'#)
+             (node ~'prefix value'# ~epoch ~'children)))
 
-         (let [x# (~ks-nth ~ks idx#)]
-           (if-let [^IRadixNode child# (lookup ~'children x# nil)]
-             (node ~'prefix ~'value ~epoch
-               (put ~'children x# (~update-method child# ~ks (p/inc idx#) ~epoch ~f)))
-             (~assoc-method ~this ~ks ~offset ~epoch (~f nil)))))
+         (let [x# (~ks-nth ~ks idx#)
+               ^IRadixNode child# (lookup ~'children x# nil)]
+           (if (nil? child#)
+             (~assoc-method ~this ~ks ~offset ~epoch (~f nil))
+             (let [child'# (~update-method child# ~ks (p/inc idx#) ~epoch ~f)]
+               (if (identical? child# child'#)
+                 (do
+                   (put! ~'children x# child'#)
+                   ~this)
+                 (node ~'prefix ~'value ~epoch (put ~'children x# child'#)))))))
        (~assoc-method ~this ~ks ~offset ~epoch (~f nil)))))
 
 (deftype RadixNode
@@ -336,10 +191,76 @@
    ^:volatile-mutable value
    ^long epoch
    ^IRadixMap children]
+
   IRadixNode
 
-  (epoch [_]
-    epoch)
+  (merge [this n f]
+    (let [^RadixNode n n
+          epoch' (p/inc epoch)
+          idx (matching-prefix-array 0 prefix (.prefix n))
+          cnt (Array/getLength prefix)
+          cnt' (Array/getLength (.prefix n))]
+      (cond (and (p/== idx cnt) (p/== idx cnt'))
+
+        (let [value' (if (identical? value none)
+                       (.value n)
+                       (if (identical? (.value n) none)
+                         value
+                         (f value (.value n))))
+              children' (reduce
+                          (fn [children k]
+                            (let [child' (lookup (.children n) k nil)]
+                              (if-let [^RadixNode child (lookup children k nil)]
+                                (put children k (.merge child child' f))
+                                (put children k child'))))
+                          children
+                          (keys* (.children n)))]
+          (node prefix value' epoch' children'))
+
+        (p/== 0 cnt)
+        (node nil value epoch'
+          (let [n' (node (drop-array 1 (.prefix n)) (.value n) epoch' (.children n))
+                x (aget ^objects (.prefix n) 0)]
+            (if-let [^RadixNode child (lookup children x nil)]
+              (put children x (.merge child n' f))
+              (put children x n'))))
+
+        (p/== 0 cnt')
+        (node nil (.value n) epoch'
+          (let [^RadixNode this' (node (drop-array 1 prefix) value epoch' children)
+                x (aget prefix 0)]
+            (if-let [child (lookup (.children n) x nil)]
+              (put (.children n) x (.merge this' child f))
+              (put (.children n) x this'))))
+
+        :else
+        (node (take-array idx prefix) none epoch'
+          (radix-map
+            (aget prefix idx) (node (drop-array (p/inc idx) prefix) value epoch' children)
+            (aget ^objects (.prefix n) idx) (node (drop-array (p/inc idx) (.prefix n)) (.value n) epoch' (.children n)))))))
+
+  (toNestedMap [this]
+    (let [ks (keys* children)]
+      (reduce
+        #(array-map %2 %1)
+        (if ks
+          (zipmap ks (map #(.toNestedMap ^IRadixNode (lookup children % nil)) ks))
+          (if (identical? value none)
+            {}
+            value))
+        (reverse prefix))))
+
+  (descend [this ^clojure.lang.Indexed ks ^long offset]
+    (let [idx (matching-prefix-indexed offset ks prefix)
+          ks-cnt (.count ks)]
+      (if (p/<= (p/- ks-cnt offset) (Array/getLength prefix))
+        (node
+          (drop-array (p/- ks-cnt offset) prefix)
+          value
+          epoch
+          children)
+        (when-let [^IRadixNode child (lookup children (.nth ks idx) nil)]
+          (.descend child ks (p/inc idx))))))
 
   (entries [_ prefix']
     (let [prefix' (into prefix' prefix)
@@ -349,7 +270,7 @@
                    (.entries
                      ^IRadixNode (lookup children k nil)
                      (conj prefix' k)))
-                 (when children (.keys children))))]
+                 (keys* children)))]
       (if (identical? none value)
         ks
         (conj ks (clojure.lang.MapEntry. prefix' value)))))
@@ -414,6 +335,26 @@
 
 ;;;
 
+(defprotocol IRadixTree
+  (update [m ks f])
+  (update! [m ks f])
+  (sub-tree [m ks])
+  (->nested-map [m])
+  (^:private merge- [m m' f]))
+
+(defn merge-with
+  [f & ms]
+  (reduce
+    (fn
+      ([] nil)
+      ([m] m)
+      ([a b] (merge- a b f)))
+    ms))
+
+(defn merge
+  [& ms]
+  (apply merge-with (fn [a b] b) ms))
+
 (declare ->transient)
 
 (defmacro ^:private compile-if [test then else]
@@ -425,6 +366,39 @@
   [^RadixNode root
    ^long epoch
    meta]
+
+  IRadixTree
+
+  (->nested-map [this]
+    (.toNestedMap root))
+
+  (update [this ks f]
+    (let [epoch' (p/inc epoch)]
+      (PersistentRadixTree.
+        (.update root (vec ks) 0 epoch' f)
+        epoch'
+        meta)))
+
+  (update! [this ks f]
+    (let [root' (.update root (vec ks) 0 epoch f)]
+      (if (identical? root root')
+        this
+        (PersistentRadixTree. root' epoch meta))))
+
+  (sub-tree [this ks]
+    (PersistentRadixTree.
+      (or (.descend root (vec ks) 0) (node (p/inc epoch)))
+      (p/inc epoch)
+      meta))
+
+  (merge- [this m f]
+    (PersistentRadixTree.
+      (if (instance? PersistentRadixTree m)
+        (.merge root (.root ^PersistentRadixTree m) f)
+        (let [m' (into (empty this) m)]
+          (.merge root (.root ^PersistentRadixTree m') f)))
+      (p/inc epoch)
+      meta))
 
   clojure.lang.IObj
   (meta [_] meta)
@@ -662,5 +636,18 @@
 (defn- ->transient [root ^long epoch meta]
   (TransientRadixTree. root epoch meta))
 
-(defn radix-tree []
-  (PersistentRadixTree. (node 0) 0 nil))
+(defn radix-tree
+  ([]
+     (PersistentRadixTree. (node 0) 0 nil))
+  ([k v]
+     (assoc (radix-tree) k v))
+  ([k v & kvs]
+     (loop [m (assoc (radix-tree) k v)
+            s kvs]
+       (if (empty? s)
+         m
+         (let [k (first s)
+               s' (rest s)]
+           (if (empty? s')
+             (throw (IllegalArgumentException. "odd number of arguments to radix-tree"))
+             (recur (assoc m k (first s')) (rest s'))))))))
