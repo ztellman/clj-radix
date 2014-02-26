@@ -13,7 +13,7 @@
 
 ;;;
 
-(def ^:private ^:const none ::none)
+(def ^:private ^:const NONE ::none)
 
 (def ^:private ^:const obj-ary (class (object-array [])))
 
@@ -22,9 +22,19 @@
   (descend [^clojure.lang.Indexed ks ^long offset])
   (toNestedMap [])
   (entries [prefix])
-  (assoc [ks ^long offset ^long epoch v])
-  (dissoc [ks ^long offset ^long epoch])
-  (update [ks ^long offset ^long epoch default])
+
+  (assocIndexed [ks ^long offset ^long epoch v])
+  (assocArray [ks ^long offset ^long epoch v])
+  (assocString [ks ^long offset ^long epoch v])
+
+  (dissocIndexed [ks ^long offset ^long epoch])
+  (dissocArray [ks ^long offset ^long epoch])
+  (dissocString [ks ^long offset ^long epoch])
+
+  (updateIndexed [ks ^long offset ^long epoch default])
+  (updateArray [ks ^long offset ^long epoch default])
+  (updateString [ks ^long offset ^long epoch default])
+
   (getIndexed [ks ^long offset default])
   (getArray [ks ^long offset default])
   (getString [ks ^long offset default]))
@@ -36,7 +46,7 @@
   `(let [idx# (~matching-prefix ~offset ~ks ~'prefix)]
       (if (p/== (p/- idx# ~offset) (Array/getLength ~'prefix))
         (if (p/== idx# ~ks-size)
-          (if (identical? ~'value none)
+          (if (identical? ~'value NONE)
             ~default
             ~'value)
           (if-let [^IRadixNode child# (lookup ~'children (~ks-nth ~ks idx#) nil)]
@@ -74,7 +84,7 @@
 
           ;; no overlap, non-empty prefix
           (and (p/== ~offset idx#) (not full-prefix?#))
-          (node nil none ~epoch
+          (node nil NONE ~epoch
             (radix-map
               (~ks-nth ~ks idx#) (node (~drop-method (p/inc idx#) ~ks) ~v ~epoch nil)
               (aget ~'prefix 0) (node (drop-array 1 ~'prefix) ~'value ~epoch ~'children)))
@@ -119,7 +129,7 @@
           ;; partial overlap
           :else
           (node (take-array (p/- idx# ~offset) ~'prefix)
-            none
+            NONE
             ~epoch
             (radix-map
               (~ks-nth ~ks idx#)
@@ -139,9 +149,9 @@
            nil
            (if transient?#
              (do
-               (set! ~'value none)
+               (set! ~'value NONE)
                ~this)
-             (node ~'prefix none ~epoch ~'children)))
+             (node ~'prefix NONE ~epoch ~'children)))
 
          (let [x# (~ks-nth ~ks idx#)
                ^IRadixNode child# (lookup ~'children x# nil)]
@@ -169,7 +179,7 @@
          transient?# (p/== ~epoch ~'epoch)]
      (if (p/== (p/- idx# ~offset) (Array/getLength ~'prefix))
        (if (p/== idx# cnt#)
-         (let [value'# (~f (if (identical? none ~'value) nil ~'value))]
+         (let [value'# (~f (if (identical? NONE ~'value) nil ~'value))]
            (if transient?#
              (set! ~'value value'#)
              (node ~'prefix value'# ~epoch ~'children)))
@@ -203,9 +213,10 @@
 
       (cond (and (p/== idx cnt) (p/== idx cnt'))
 
-        (let [value' (if (identical? value none)
+        ;; match, do actual merge
+        (let [value' (if (identical? value NONE)
                        (.value n)
-                       (if (identical? (.value n) none)
+                       (if (identical? (.value n) NONE)
                          value
                          (f value (.value n))))
               children' (reduce
@@ -218,6 +229,7 @@
                           (keys* (.children n)))]
           (node prefix value' epoch' children'))
 
+        ;; place ourselves above the other node
         (p/== idx cnt)
         (node prefix value epoch'
           (let [n' (node (drop-array (p/inc idx) (.prefix n)) (.value n) epoch' (.children n))
@@ -226,6 +238,7 @@
               (put children x (.merge child n' f))
               (put children x n'))))
 
+        ;; place the other node above us
         (p/== idx cnt')
         (node (.prefix n) (.value n) epoch'
           (let [^RadixNode this' (node (drop-array (p/inc idx) prefix) value epoch' children)
@@ -234,8 +247,9 @@
               (put (.children n) x (.merge this' child f))
               (put (.children n) x this'))))
 
+        ;; no match, place node above both
         :else
-        (node (take-array idx prefix) none epoch'
+        (node (take-array idx prefix) NONE epoch'
           (radix-map
             (aget prefix idx) (node (drop-array (p/inc idx) prefix) value epoch' children)
             (aget ^objects (.prefix n) idx) (node (drop-array (p/inc idx) (.prefix n)) (.value n) epoch' (.children n)))))))
@@ -246,7 +260,7 @@
         #(array-map %2 %1)
         (if ks
           (zipmap ks (map #(.toNestedMap ^IRadixNode (lookup children % nil)) ks))
-          (if (identical? value none)
+          (if (identical? value NONE)
             {}
             value))
         (reverse prefix))))
@@ -272,32 +286,78 @@
                      ^IRadixNode (lookup children k nil)
                      (conj prefix' k)))
                  (keys* children)))]
-      (if (identical? none value)
+      (if (identical? NONE value)
         ks
         (conj ks (clojure.lang.MapEntry. prefix' value)))))
 
-  (assoc [this ks ^long offset ^long epoch' v]
+  (assocIndexed [this ks ^long offset ^long epoch' v]
     (assoc* [this ^clojure.lang.Indexed ks offset epoch' v]
-      .assoc
+      .assocIndexed
       drop-indexed
       matching-prefix-indexed
       (p/long (.count ^clojure.lang.Indexed ks))
       .nth))
 
-  (dissoc [this ks ^long offset ^long epoch']
+  (assocArray [this ks ^long offset ^long epoch' v]
+    (assoc* [this ^objects ks offset epoch' v]
+      .assocArray
+      drop-array
+      matching-prefix-array
+      (p/long (Array/getLength ks))
+      aget))
+
+  (assocString [this ks ^long offset ^long epoch' v]
+    (assoc* [this ^CharSequence ks offset epoch' v]
+      .assocString
+      drop-string
+      matching-prefix-string
+      (p/long (.length ^CharSequence ks))
+      char-at))
+
+  (dissocIndexed [this ks ^long offset ^long epoch']
     (dissoc* [this ^clojure.lang.Indexed ks offset epoch']
-      .dissoc
+      .dissocIndexed
       matching-prefix-indexed
       (p/long (.count ^clojure.lang.Indexed ks))
       .nth))
 
-  (update [this ks ^long offset ^long epoch' f]
+  (dissocArray [this ks ^long offset ^long epoch']
+    (dissoc* [this ^objects ks offset epoch']
+      .dissocArray
+      matching-prefix-array
+      (p/long (Array/getLength ks))
+      aget))
+
+  (dissocString [this ks ^long offset ^long epoch']
+    (dissoc* [this ^CharSequence ks offset epoch']
+      .dissocString
+      matching-prefix-string
+      (p/long (.length ^CharSequence ks))
+      char-at))
+
+  (updateIndexed [this ks ^long offset ^long epoch' f]
     (update* [this ^clojure.lang.Indexed ks offset epoch' f]
-      .assoc
-      .update
+      .assocIndexed
+      .updateIndexed
       matching-prefix-indexed
       (p/long (.count ^clojure.lang.Indexed ks))
       .nth))
+
+  (updateArray [this ks ^long offset ^long epoch' f]
+    (update* [this ^objects ks offset epoch' f]
+      .assocArray
+      .updateArray
+      matching-prefix-array
+      (p/long (Array/getLength ks))
+      aget))
+
+  (updateString [this ks ^long offset ^long epoch' f]
+    (update* [this ^CharSequence ks offset epoch' f]
+      .assocString
+      .updateString
+      matching-prefix-string
+      (p/long (.length ^CharSequence ks))
+      char-at))
 
   (getIndexed [this ks offset default]
     (get* [^clojure.lang.Indexed ks offset default]
@@ -327,9 +387,9 @@
 (let [empty-ary (object-array [])]
   (defn- node
     ([^long epoch]
-       (RadixNode. empty-ary none epoch nil))
+       (RadixNode. empty-ary NONE epoch nil))
     ([prefix ^long epoch children]
-       (RadixNode. (if (nil? prefix) empty-ary prefix) none epoch children))
+       (RadixNode. (if (nil? prefix) empty-ary prefix) NONE epoch children))
     ([prefix value ^long epoch children]
        (RadixNode. (if (nil? prefix) empty-ary prefix) value epoch children))))
 
@@ -376,15 +436,16 @@
   (update [this ks f]
     (let [epoch' (p/inc epoch)]
       (PersistentRadixTree.
-        (.update root (vec ks) 0 epoch' f)
+        (cond
+          (instance? clojure.lang.Indexed ks) (.updateIndexed root ks 0 epoch' f)
+          (instance? obj-ary ks) (.updateArray root ks 0 epoch' f)
+          (instance? CharSequence ks) (.updateString root ks 0 epoch' f)
+          :else (.updateIndexed root (vec ks) 0 epoch' f))
         epoch'
         meta)))
 
   (update! [this ks f]
-    (let [root' (.update root (vec ks) 0 epoch f)]
-      (if (identical? root root')
-        this
-        (PersistentRadixTree. root' epoch meta))))
+    (throw (IllegalStateException. "update! can only be called on a transient radix tree")))
 
   (sub-tree [this ks]
     (PersistentRadixTree.
@@ -486,7 +547,14 @@
 
   (assoc [this k v]
     (let [epoch' (p/inc epoch)]
-      (PersistentRadixTree. (.assoc root (vec k) 0 epoch' v) epoch' meta)))
+      (PersistentRadixTree.
+        (cond
+          (instance? clojure.lang.Indexed k) (.assocIndexed root k 0 epoch' v)
+          (instance? obj-ary k) (.assocArray root k 0 epoch' v)
+          (instance? CharSequence k) (.assocString root k 0 epoch' v)
+          :else (.assocIndexed root (vec k) 0 epoch' v))
+        epoch'
+        meta)))
 
   (empty [this]
     (PersistentRadixTree. (node 0) 0 nil))
@@ -530,7 +598,11 @@
     (let [epoch' (p/inc epoch)]
       (PersistentRadixTree.
         (or
-          (.dissoc root (vec k) 0 epoch')
+          (cond
+            (instance? clojure.lang.Indexed k) (.dissocIndexed root k 0 epoch')
+            (instance? obj-ary k) (.dissocArray root k 0 epoch')
+            (instance? CharSequence k) (.dissocString root k 0 epoch')
+            :else (.dissocIndexed root (vec k) 0 epoch'))
           (node epoch'))
         epoch'
         meta)))
@@ -543,10 +615,36 @@
   (invoke [this k default]
     (.valAt this k default)))
 
+;;;
+
 (deftype TransientRadixTree
   [^RadixNode root
    ^long epoch
    meta]
+
+  IRadixTree
+
+  (->nested-map [this]
+    (.toNestedMap root))
+
+  (update [this ks f]
+    (throw (IllegalStateException. "update can only be called on a persistent radix tree")))
+
+  (sub-tree [this ks]
+    (throw (IllegalStateException. "sub-tree can only be called on a persistent radix tree")))
+
+  (merge- [this m f]
+    (throw (IllegalStateException. "merge can only be called on a persistent radix tree")))
+
+  (update! [this ks f]
+    (let [root' (cond
+                  (instance? clojure.lang.Indexed ks) (.updateIndexed root ks 0 epoch f)
+                  (instance? obj-ary ks) (.updateArray root ks 0 epoch f)
+                  (instance? CharSequence ks) (.updateString root ks 0 epoch f)
+                  :else (.updateIndexed root (vec ks) 0 epoch f))]
+      (if (identical? root root')
+        this
+        (PersistentRadixTree. root' epoch meta))))
 
   clojure.lang.IObj
   (meta [_] meta)
@@ -605,7 +703,11 @@
   clojure.lang.ITransientMap
 
   (assoc [this k v]
-    (let [root' (.assoc root (vec k) 0 epoch v)]
+    (let [root' (cond
+                  (instance? clojure.lang.Indexed k) (.assocIndexed root k 0 epoch v)
+                  (instance? obj-ary k) (.assocArray root k 0 epoch v)
+                  (instance? CharSequence k) (.assocString root k 0 epoch v)
+                  :else (.assocIndexed root (vec k) 0 epoch v))]
       (if (identical? root root')
         this
         (TransientRadixTree. root' epoch meta))))
@@ -621,7 +723,11 @@
     (PersistentRadixTree. root (p/inc epoch) meta))
 
   (without [this k]
-    (let [root' (.dissoc root (vec k) 0 epoch)]
+    (let [root' (cond
+                  (instance? clojure.lang.Indexed k) (.dissocIndexed root k 0 epoch)
+                  (instance? obj-ary k) (.dissocArray root k 0 epoch)
+                  (instance? CharSequence k) (.dissocString root k 0 epoch)
+                  :else (.dissocIndexed root (vec k) 0 epoch))]
       (if (identical? root root')
         this
         (TransientRadixTree. (or root' (node epoch)) epoch meta))))
