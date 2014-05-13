@@ -1,7 +1,7 @@
 (ns clj-radix.map
   (:refer-clojure :exclude [remove])
   (:import
-    [java.util HashMap]))
+    [java.util Map HashMap]))
 
 (definterface IRadixMap
   (keys [])
@@ -14,9 +14,9 @@
 (deftype RadixMap [^HashMap m]
   IRadixMap
   (keys [_] (.keySet m))
-  (put [_ k v] (RadixMap. (doto (HashMap. m) (.put k v))))
+  (put [_ k v] (RadixMap. (doto ^Map (.clone m) (.put k v))))
   (putBang [this k v] (.put m k v) this)
-  (remove [_ k] (RadixMap. (doto (HashMap. m) (.remove k))))
+  (remove [_ k] (RadixMap. (doto ^Map (.clone m) (.remove k))))
   (removeBang [this k] (.remove m k) this)
   (lookup [_ k default] (if (.containsKey m k) (.get m k) default)))
 

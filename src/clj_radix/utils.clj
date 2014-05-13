@@ -54,39 +54,61 @@
 
 ;;;
 
-(defmacro ^:private matching-prefix* [[offset ks prefix] ks-size ks-lookup]
-  `(if (or (nil? ~ks) (nil? ~prefix))
-     ~offset
-     (let [cnt-ks# (p/- ~ks-size ~offset)
-           cnt-prefix# (p/long (Array/getLength ~prefix))
-           cnt# (Math/min cnt-ks# cnt-prefix#)]
-       (loop [idx# 0]
-         (if (p/== cnt# idx#)
-           (p/+ ~offset idx#)
-           (if (= (~ks-lookup ~ks (p/+ ~offset idx#)) (aget ~prefix idx#))
-             (recur (p/inc idx#))
-             (p/+ ~offset idx#)))))))
-
-#_(defn ^long matching-prefix
-  ^long [^long offset ks ^objects prefix]
-  (matching-prefix* [offset ks prefix]
-    (p/long (count ks))
-    nth))
+(defmacro ^:private matching-prefix* [basic-equals? [offset ks prefix] ks-size ks-lookup]
+  (let [idx-sym (gensym "idx")]
+    `(if (or (nil? ~ks) (nil? ~prefix))
+       ~offset
+       (let [cnt-ks# (p/- ~ks-size ~offset)
+             cnt-prefix# (p/long (Array/getLength ~prefix))
+             cnt# (Math/min cnt-ks# cnt-prefix#)]
+         (loop [~idx-sym 0]
+           (if (p/== cnt# ~idx-sym)
+             (p/+ ~offset ~idx-sym)
+             ~(if basic-equals?
+                `(let [v# (~ks-lookup ~ks (p/+ ~offset ~idx-sym))
+                       v'# (aget ~prefix ~idx-sym)]
+                   (if (if (nil? v#)
+                         (nil? v'#)
+                         (.equals v# v'#))
+                     (recur (p/inc ~idx-sym))
+                     (p/+ ~offset ~idx-sym)))
+                `(if (= (~ks-lookup ~ks (p/+ ~offset ~idx-sym))
+                       (aget ~prefix ~idx-sym))
+                   (recur (p/inc ~idx-sym))
+                   (p/+ ~offset ~idx-sym)))))))))
 
 (defn ^long matching-prefix-array
   ^long [^long offset ^objects ks ^objects prefix]
-  (matching-prefix* [offset ks prefix]
+  (matching-prefix* false [offset ks prefix]
     (Array/getLength ks)
     aget))
 
 (defn ^long matching-prefix-indexed
   ^long [^long offset ^clojure.lang.Indexed ks ^objects prefix]
-  (matching-prefix* [offset ks prefix]
+  (matching-prefix* false [offset ks prefix]
     (p/long (.count ^clojure.lang.Indexed ks))
     .nth))
 
 (defn ^long matching-prefix-string
   ^long [^long offset ^CharSequence ks ^objects prefix]
-  (matching-prefix* [offset ks prefix]
+  (matching-prefix* false [offset ks prefix]
+    (p/long (.length ^CharSequence ks))
+    char-at))
+
+(defn ^long matching-prefix-array*
+  ^long [^long offset ^objects ks ^objects prefix]
+  (matching-prefix* true [offset ks prefix]
+    (Array/getLength ks)
+    aget))
+
+(defn ^long matching-prefix-indexed*
+  ^long [^long offset ^clojure.lang.Indexed ks ^objects prefix]
+  (matching-prefix* true [offset ks prefix]
+    (p/long (.count ^clojure.lang.Indexed ks))
+    .nth))
+
+(defn ^long matching-prefix-string*
+  ^long [^long offset ^CharSequence ks ^objects prefix]
+  (matching-prefix* true [offset ks prefix]
     (p/long (.length ^CharSequence ks))
     char-at))

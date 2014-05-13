@@ -2,6 +2,7 @@
   (:use
     [clojure.test])
   (:require
+    [clojure.java.io :as io]
     [clj-radix :as r]
     [collection-check :as check]
     [criterium.core :as c]
@@ -9,6 +10,19 @@
     [simple-check.properties :as prop]
     [simple-check.clojure-test :as ct :refer (defspec)]
     [clojure.math.combinatorics :as comb]))
+
+;;;
+
+(def words (-> (io/file "test/words") io/reader line-seq vec))
+
+(deftest ^:benchmark benchmark-words
+  (let [entries (map vector words (repeat 0))]
+    (println "-- words into radix-tree")
+    (c/quick-bench
+      (into (r/radix-tree) entries))
+    (println "-- words into normal map")
+    (c/quick-bench
+      (into {} entries))))
 
 ;;;
 

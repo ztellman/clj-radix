@@ -3,7 +3,7 @@
   :url "https://github.com/ztellman/clj-radix"
   :license {:name "MIT License"
             :url "http://dd.mit-license.org/"}
-  :dependencies [[primitive-math "0.1.3"]]
+  :dependencies [[primitive-math "0.1.4-SNAPSHOT"]]
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.6.0-beta1"]
                                   [criterium "0.4.3"]
                                   [collection-check "0.1.2"]

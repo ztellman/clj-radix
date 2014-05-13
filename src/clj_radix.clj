@@ -31,9 +31,9 @@
   (dissocArray [ks ^long offset ^long epoch])
   (dissocString [ks ^long offset ^long epoch])
 
-  (updateIndexed [ks ^long offset ^long epoch default])
-  (updateArray [ks ^long offset ^long epoch default])
-  (updateString [ks ^long offset ^long epoch default])
+  (updateIndexed [ks ^long offset ^long epoch f])
+  (updateArray [ks ^long offset ^long epoch f])
+  (updateString [ks ^long offset ^long epoch f])
 
   (getIndexed [ks ^long offset default])
   (getArray [ks ^long offset default])
@@ -181,7 +181,9 @@
        (if (p/== idx# cnt#)
          (let [value'# (~f (if (identical? NONE ~'value) nil ~'value))]
            (if transient?#
-             (set! ~'value value'#)
+             (do
+               (set! ~'value value'#)
+               ~this)
              (node ~'prefix value'# ~epoch ~'children)))
 
          (let [x# (~ks-nth ~ks idx#)
@@ -378,11 +380,7 @@
       .getString
       matching-prefix-string
       (p/long (.length ^CharSequence ks))
-      char-at))
-
-  clojure.lang.IDeref
-  (deref [_]
-    {:prefix (seq prefix) :value value :children children}))
+      char-at)))
 
 (let [empty-ary (object-array [])]
   (defn- node
@@ -511,11 +509,7 @@
   (hasheq [this]
     (compile-if (resolve 'clojure.core/hash-unordered-coll)
       (hash-unordered-coll this)
-      (reduce
-        (fn [acc [k v]]
-          (unchecked-add acc (bit-xor (hash k) (hash v))))
-        0
-        (seq this))))
+      (.hashCode this)))
 
   (equals [this x]
     (or (identical? this x)
@@ -644,7 +638,7 @@
                   :else (.updateIndexed root (vec ks) 0 epoch f))]
       (if (identical? root root')
         this
-        (PersistentRadixTree. root' epoch meta))))
+        (TransientRadixTree. root' epoch meta))))
 
   clojure.lang.IObj
   (meta [_] meta)
