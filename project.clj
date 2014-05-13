@@ -7,7 +7,11 @@
   :profiles {:dev {:dependencies [[org.clojure/clojure "1.6.0-beta1"]
                                   [criterium "0.4.3"]
                                   [collection-check "0.1.2"]
-                                  [org.clojure/math.combinatorics "0.0.7"]]}}
+                                  [org.clojure/math.combinatorics "0.0.7"]
+                                  #_[codox-md "0.2.0" :exclusions [org.clojure/clojure]]]}}
+  :plugins [[codox "0.8.0"]]
+  :codox {;:writer codox-md.writer/write-docs
+          :include [clj-radix]}
   :global-vars {*warn-on-reflection* true}
   :test-selectors {:default (complement :benchmark)
                    :benchmark :benchmark}
