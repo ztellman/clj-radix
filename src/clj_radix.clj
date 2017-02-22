@@ -1,6 +1,6 @@
 (ns clj-radix
   (:refer-clojure
-    :exclude [remove merge merge-with])
+    :exclude [remove merge merge-with update])
   (:require
     [primitive-math :as p]
     [clj-radix.utils :refer :all]
